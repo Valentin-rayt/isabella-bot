@@ -1,52 +1,96 @@
-import requests
+import os
 import time
 import openai
+from playwright.sync_api import sync_playwright
+from dotenv import load_dotenv
 
-# --- CONFIGURATION ---
-OPENAI_API_KEY = "ton_api_key_openai"
-THREADS_USER_ID = "ton_user_id_threads"
-COOKIE = "ta_cookie_threads"
-
-HEADERS = {
-    "cookie": COOKIE,
-    "user-agent": "Mozilla/5.0"
-}
+# Load secrets
+load_dotenv()
+COOKIE = os.getenv("THREADS_COOKIE")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+USER_ID = os.getenv("THREADS_USER_ID")
 
 openai.api_key = OPENAI_API_KEY
 
-# Fonction pour générer une réponse avec GPT-4
-def generate_reply(comment):
-    prompt = f"Réponds de manière sensuelle, classe et féminine à ce commentaire, en incarnant Isabella : '{comment}'"
-    res = openai.ChatCompletion.create(
+# Mémoire pour ne pas répondre deux fois
+handled_comments = set()
+
+def generate_reply(comment_text):
+    print(f"[GPT-4] Génération de réponse à : {comment_text}")
+    prompt = f"""Tu es Isabella, une femme de 50 ans, sensuelle, douce, élégante et provocante.
+Tu réponds à ce commentaire sur Threads avec un ton sexy, chaleureux, en ajoutant quelques emojis si possible.
+
+Commentaire : {comment_text}
+Réponse :"""
+
+    completion = openai.ChatCompletion.create(
         model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.9
     )
-    return res.choices[0].message.content.strip()
+    return completion.choices[0].message["content"]
 
-# Fonction pour récupérer les commentaires des posts Threads
-def get_latest_comments():
-    # Remplace cette fonction avec la vraie API non-officielle Threads si tu en trouves une fiable
-    print("[!] À coder selon l'API Threads ou via scrapper requests")
-    return []
+def run_bot():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
 
-# Fonction pour répondre à un commentaire
-def reply_to_comment(comment_id, reply_text):
-    print(f"[Réponse automatique] {comment_id} -> {reply_text}")
-    # À implémenter via API non-officielle ou automatisation avec autre service
+        # Injecter les cookies
+        context.add_cookies([{
+            "name": "ds_user_id",
+            "value": USER_ID,
+            "domain": ".instagram.com",
+            "path": "/"
+        }, {
+            "name": "sessionid",
+            "value": COOKIE,
+            "domain": ".instagram.com",
+            "path": "/"
+        }])
 
-# Fonction pour liker un commentaire
-def like_comment(comment_id):
-    print(f"[Like automatique] {comment_id}")
-    # À implémenter aussi via l'API Threads ou via requêtes
+        page = context.new_page()
 
-# --- BOUCLE PRINCIPALE ---
-if __name__ == '__main__':
-    print("[Bot Isabella lancé 🚀]")
-    while True:
-        comments = get_latest_comments()
+        print("🔗 Connexion à Threads...")
+        page.goto("https://www.threads.net")
+
+        # Attendre chargement
+        page.wait_for_timeout(5000)
+
+        print("📥 Lecture des commentaires...")
+
+        comments = page.locator("xpath=//span[contains(text(), '')]").all()
+
         for comment in comments:
-            if not comment.get("replied"):
-                reply = generate_reply(comment["text"])
-                reply_to_comment(comment["id"], reply)
-                like_comment(comment["id"])
-        time.sleep(30)  # Pause entre deux scans
+            try:
+                text = comment.inner_text()
+                if text not in handled_comments and len(text) > 3:
+                    handled_comments.add(text)
+                    reply = generate_reply(text)
+
+                    print(f"📝 Réponse : {reply}")
+
+                    # Cliquer pour répondre
+                    comment.click()
+                    page.wait_for_timeout(1000)
+                    input_box = page.locator("textarea").first
+                    input_box.fill(reply)
+                    input_box.press("Enter")
+
+                    # Attendre envoi + like
+                    time.sleep(3)
+                    like_button = page.locator("xpath=//button[contains(@aria-label, 'Like')]").first
+                    if like_button:
+                        like_button.click()
+
+            except Exception as e:
+                print("Erreur :", e)
+
+        print("✅ Fin de cycle. Attente avant prochain scan...")
+        page.close()
+        context.close()
+        browser.close()
+
+if __name__ == "__main__":
+    while True:
+        run_bot()
+        time.sleep(300)  # toutes les 5 minutes
