@@ -1,3 +1,5 @@
+import subprocess
+subprocess.run("playwright install", shell=True)
 import os
 import time
 import openai
