@@ -1,65 +1,89 @@
 import os
 import time
-import asyncio
-from openai import OpenAI
+import openai
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
 
-# Charger les variables d'environnement
+# Load environment variables
 load_dotenv()
-COOKIE = os.getenv("THREADS_COOKIE")
-USER_ID = os.getenv("THREADS_USER_ID")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 
-client = OpenAI(api_key=OPENAI_KEY)
+THREADS_COOKIE = os.getenv("THREADS_COOKIE")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        await context.add_cookies([{
-            "name": "sessionid",
-            "value": COOKIE,
-            "domain": ".threads.net",
-            "path": "/",
-            "httpOnly": True,
-            "secure": True,
-            "sameSite": "Lax"
-        }])
-        page = await context.new_page()
+openai.api_key = OPENAI_API_KEY
 
-        # Aller sur la page utilisateur Threads
-        await page.goto(f"https://www.threads.net/@{USER_ID}")
-        await page.wait_for_timeout(3000)
+def gpt4_reply(prompt):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Tu es Isabella, une femme charismatique, douce, séductrice et sûre d’elle."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"[Erreur GPT-4] {str(e)}"
 
-        # Trouver les commentaires sous les posts
-        comments = await page.query_selector_all("article div[dir='auto']")
+def launch_bot():
+    options = uc.ChromeOptions()
+    options.headless = True
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    driver = uc.Chrome(options=options)
+
+    print("[✓] Lancement du bot Isabella avec Selenium...")
+    driver.get(f"https://www.threads.net/@{THREADS_USER_ID}")
+
+    # Injecter les cookies
+    driver.add_cookie({
+        'name': 'sessionid',
+        'value': THREADS_COOKIE,
+        'domain': '.threads.net',
+        'path': '/',
+        'secure': True,
+        'httpOnly': True
+    })
+
+    driver.refresh()
+
+    try:
+        wait = WebDriverWait(driver, 15)
+        comments = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div[role='comment']")))
+        print(f"[✓] {len(comments)} commentaire(s) détecté(s)")
+
         for comment in comments:
-            text = await comment.inner_text()
-            print(f"[🗨️] Nouveau commentaire : {text}")
+            try:
+                content = comment.text.strip()
+                print(f"[🗨️] Commentaire: {content}")
+                response = gpt4_reply(content)
 
-            # Demander à GPT-4 une réponse stylée Isabella
-            gpt_reply = client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Tu es Isabella, une femme très séduisante, douce et mystérieuse. Tu réponds avec empathie, assurance et quelques emojis. Tu restes toujours élégante."
-                    },
-                    {"role": "user", "content": text}
-                ]
-            )
+                # Simuler une réponse (à adapter selon l'UI exacte)
+                reply_box = comment.find_element(By.CSS_SELECTOR, "textarea")
+                reply_box.send_keys(response)
+                reply_box.send_keys(Keys.ENTER)
+                print(f"[💬] Réponse envoyée: {response}")
 
-            final_reply = gpt_reply.choices[0].message.content.strip()
-            print(f"[🤖] Réponse d'Isabella : {final_reply}")
+                # Liker le commentaire (à adapter si nécessaire)
+                like_button = comment.find_element(By.CSS_SELECTOR, "button[aria-label='J’aime']")
+                like_button.click()
+                print("[❤️] Like envoyé")
 
-            # Poster la réponse (à coder selon API Threads/scrap)
-            print(f"[💬] (simulation) Poster : {final_reply}")
+                time.sleep(2)
 
-            # Liker le commentaire (à coder selon Playwright ou API Threads)
-            print("[❤️] (simulation) Like du commentaire")
+            except Exception as err:
+                print(f"[!] Erreur sur un commentaire: {err}")
 
-        await browser.close()
+    except Exception as e:
+        print(f"[!] Erreur principale: {str(e)}")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    driver.quit()
+
+if __name__ == '__main__':
+    launch_bot()
