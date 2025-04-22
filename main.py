@@ -1,96 +1,74 @@
 import os
 import time
-import openai
+import requests
+from openai import OpenAI
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 
-# Load secrets
 load_dotenv()
-COOKIE = os.getenv("THREADS_COOKIE")
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-USER_ID = os.getenv("THREADS_USER_ID")
+THREADS_COOKIE = os.getenv("THREADS_COOKIE")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID")
 
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Mémoire pour ne pas répondre deux fois
-handled_comments = set()
-
-def generate_reply(comment_text):
-    print(f"[GPT-4] Génération de réponse à : {comment_text}")
-    prompt = f"""Tu es Isabella, une femme de 50 ans, sensuelle, douce, élégante et provocante.
-Tu réponds à ce commentaire sur Threads avec un ton sexy, chaleureux, en ajoutant quelques emojis si possible.
-
-Commentaire : {comment_text}
-Réponse :"""
-
-    completion = openai.ChatCompletion.create(
+def generate_reply(comment):
+    system = "Tu es Isabella, une femme de 50 ans très séduisante, sensuelle, douce et malicieuse. Tu parles avec charme et assurance."
+    user = f"Quelqu’un t’a laissé ce commentaire : {comment}\nRéponds-lui avec ta personnalité en 1 ou 2 phrases + ajoute un emoji à la fin."
+    response = client.chat.completions.create(
         model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.9
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user}
+        ]
     )
-    return completion.choices[0].message["content"]
+    return response.choices[0].message.content.strip()
 
 def run_bot():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
-
-        # Injecter les cookies
-        context.add_cookies([{
-            "name": "ds_user_id",
-            "value": USER_ID,
-            "domain": ".instagram.com",
-            "path": "/"
-        }, {
-            "name": "sessionid",
-            "value": COOKIE,
-            "domain": ".instagram.com",
-            "path": "/"
-        }])
-
         page = context.new_page()
 
-        print("🔗 Connexion à Threads...")
-        page.goto("https://www.threads.net")
+        # Authentification Threads
+        page.add_init_script(f"""() => {{
+            document.cookie = "sessionid={THREADS_COOKIE}";
+        }}""")
 
-        # Attendre chargement
+        print("Connexion à Threads...")
+        page.goto(f"https://www.threads.net/@{THREADS_USER_ID}")
         page.wait_for_timeout(5000)
 
-        print("📥 Lecture des commentaires...")
+        print("Récupération des derniers commentaires...")
+        comments = page.query_selector_all("article div[role='button']")
 
-        comments = page.locator("xpath=//span[contains(text(), '')]").all()
-
-        for comment in comments:
+        for comment in comments[:5]:  # ⛔ limiter à 5 pour test
             try:
                 text = comment.inner_text()
-                if text not in handled_comments and len(text) > 3:
-                    handled_comments.add(text)
-                    reply = generate_reply(text)
+                print(f"> Commentaire : {text}")
+                reply = generate_reply(text)
+                print(f"→ Réponse IA : {reply}")
 
-                    print(f"📝 Réponse : {reply}")
+                comment.click()
+                page.wait_for_timeout(1000)
+                reply_box = page.query_selector("textarea")
+                reply_box.fill(reply)
+                page.keyboard.press("Enter")
+                time.sleep(2)
 
-                    # Cliquer pour répondre
-                    comment.click()
-                    page.wait_for_timeout(1000)
-                    input_box = page.locator("textarea").first
-                    input_box.fill(reply)
-                    input_box.press("Enter")
-
-                    # Attendre envoi + like
-                    time.sleep(3)
-                    like_button = page.locator("xpath=//button[contains(@aria-label, 'Like')]").first
-                    if like_button:
-                        like_button.click()
-
+                # Like auto après avoir posté
+                like_btn = page.query_selector("svg[aria-label='Like']") or page.query_selector("svg[aria-label='J’aime']")
+                if like_btn:
+                    like_btn.click()
+                    print("❤️ Like envoyé")
             except Exception as e:
-                print("Erreur :", e)
+                print(f"Erreur sur un commentaire : {e}")
+                continue
 
-        print("✅ Fin de cycle. Attente avant prochain scan...")
-        page.close()
-        context.close()
+        print("✅ Bot Isabella terminé")
         browser.close()
 
 if __name__ == "__main__":
-    while True:
-        run_bot()
-        time.sleep(300)  # toutes les 5 minutes
+    run_bot()
+
