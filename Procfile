@@ -1,1 +1,2 @@
-worker: python3 main.py
+release: bash install.sh
+web: python main.py
