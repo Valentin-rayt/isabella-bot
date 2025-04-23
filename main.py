@@ -13,7 +13,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai = OpenAI(api_key=OPENAI_API_KEY)
 
-# Liste des commentaires déjà traités pour éviter les doublons
+# Empêche les réponses en double
 treated_comments = set()
 
 def is_within_active_hours():
@@ -49,4 +49,29 @@ async def run_bot():
     print("🚀 Bot Isabella démarré.")
     while True:
         try:
-            if not is_within_
+            if not is_within_active_hours():
+                print("⏸️ Bot en pause (hors horaires 9h–23h).")
+                await asyncio.sleep(300)
+                continue
+
+            print("\n🔁 Vérification des nouveaux commentaires...")
+            comments = get_mock_comments()
+
+            for comment in comments:
+                if comment in treated_comments:
+                    print(f"⏭️ Commentaire déjà traité : {comment}")
+                    continue
+
+                reply = generate_reply(comment)
+                simulate_post_and_like(comment, reply)
+                treated_comments.add(comment)
+                await asyncio.sleep(4)
+
+            await asyncio.sleep(120)
+
+        except Exception as e:
+            print(f"❌ Erreur dans le bot : {str(e)}")
+            await asyncio.sleep(60)
+
+if __name__ == "__main__":
+    asyncio.run(run_bot())
