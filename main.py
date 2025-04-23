@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
-from playwright.async_api import async_playwright
 
 load_dotenv()
 
@@ -14,44 +13,23 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai = OpenAI(api_key=OPENAI_API_KEY)
 
-# Pour garder une trace des commentaires déjà traités
-seen_comments = set()
-
-# Vérifie si l'heure est entre 9h et 23h
 def is_within_active_hours():
     now = datetime.now().hour
     return 9 <= now < 23
 
-# Fonction pour récupérer les vrais commentaires avec Playwright
-async def get_real_comments():
-    comments = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            extra_http_headers={
-                "cookie": THREADS_COOKIE
-            }
-        )
-        page = await context.new_page()
+# Stocke les commentaires déjà répondus
+seen_comments = set()
 
-        try:
-            await page.goto(f"https://www.threads.net/@{THREADS_USER_ID}")
-            await page.wait_for_selector("article")
-            threads = await page.query_selector_all("article")
+# Mock de commentaires pour démo
+MOCK_COMMENTS = [
+    "Tu es magnifique ❤️",
+    "T'es dispo ce soir ? 😏",
+    "C’est quoi ton secret beauté ?"
+]
 
-            for thread in threads:
-                content = await thread.inner_text()
-                if content and content not in seen_comments:
-                    comments.append(content)
-                    seen_comments.add(content)
+def get_mock_comments():
+    return MOCK_COMMENTS
 
-        except Exception as e:
-            print(f"Erreur Playwright : {e}")
-
-        await browser.close()
-    return comments
-
-# Utilise GPT-4 pour générer une réponse style Isabella
 def generate_reply(comment):
     prompt = f"Tu es Isabella, une femme douce, sexy, confiante, de 50 ans, très élégante et un peu provocante. Réponds à ce commentaire : \"{comment}\" avec charme, humour et un ou deux emojis."
     try:
@@ -65,13 +43,11 @@ def generate_reply(comment):
     except Exception as e:
         return f"[Erreur GPT] {str(e)}"
 
-# Simule la réponse + le like
 def simulate_post_and_like(comment, reply):
     print(f"\n🗨️ Commentaire reçu : {comment}")
     print(f"🤖 Réponse d'Isabella : {reply}")
     print("❤️ Like automatique envoyé")
 
-# Boucle principale du bot
 async def run_bot():
     print("🔧 Le bot est bien dans main.py et prêt à démarrer la boucle.")
     while True:
@@ -81,17 +57,21 @@ async def run_bot():
             continue
 
         print("\n🔁 Lancement de la boucle principale...")
-        print("📲 Vérification des nouveaux commentaires...")
+        print("🔍 Vérification des nouveaux commentaires...")
 
-        comments = await get_real_comments()
+        comments = get_mock_comments()
 
         for comment in comments:
+            if comment in seen_comments:
+                print(f"🔹 Commentaire déjà traité : {comment}")
+                continue
+
+            seen_comments.add(comment)
             reply = generate_reply(comment)
             simulate_post_and_like(comment, reply)
-            await asyncio.sleep(4)
+            await asyncio.sleep(3)
 
-        await asyncio.sleep(120)
+        await asyncio.sleep(60)
 
 if __name__ == "__main__":
-    print("🔧 Le bot est bien dans main.py et prêt à démarrer la boucle.")
     asyncio.run(run_bot())
