@@ -18,7 +18,7 @@ def is_within_active_hours():
     now = datetime.now().hour
     return 9 <= now < 23
 
-# Simule des commentaires Threads (à remplacer plus tard par un vrai scraping)
+# Simule des commentaires Threads (remplace par un vrai scraping plus tard)
 def get_mock_comments():
     return ["Tu es magnifique ❤️", "T'es dispo ce soir ? 😏", "C’est quoi ton secret beauté ?"]
 
@@ -44,10 +44,11 @@ def simulate_post_and_like(comment, reply):
 
 # Boucle principale du bot
 async def run_bot():
+    print("🌐 Isabella Bot actif (9h → 23h)")
     while True:
         if not is_within_active_hours():
-            print("⏸️ Bot en pause (hors horaires 9h-23h).")
-            time.sleep(300)
+            print("⏸️ Bot en pause (hors horaires 9h-23h). Reprise automatique à 9h00...")
+            await asyncio.sleep(300)
             continue
 
         print("\n🔁 Vérification des nouveaux commentaires...")
@@ -56,9 +57,9 @@ async def run_bot():
         for comment in comments:
             reply = generate_reply(comment)
             simulate_post_and_like(comment, reply)
-            time.sleep(4)
+            await asyncio.sleep(4)
 
-        time.sleep(120)
+        await asyncio.sleep(120)
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
