@@ -1,56 +1,64 @@
 import os
+import time
 import asyncio
+from datetime import datetime
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
-import openai
+from openai import OpenAI
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 THREADS_COOKIE = os.getenv("THREADS_COOKIE")
 THREADS_USER_ID = os.getenv("THREADS_USER_ID")
-openai.api_key = OPENAI_API_KEY
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Fonctions
-async def get_latest_comments(page, user_id):
-    await page.goto(f"https://www.threads.net/@{user_id}")
-    await page.wait_for_timeout(5000)  # attendre le chargement
-    comments = await page.locator("xpath=//span[contains(text(),'commentaire')]/../..").all_text_contents()
-    return comments[:3]
+openai = OpenAI(api_key=OPENAI_API_KEY)
 
-async def ask_gpt(prompt):
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "Tu es Isabella, une femme sexy, douce, malicieuse et provocante."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    return response.choices[0].message.content.strip()
+# Vérifie si l'heure est entre 9h et 23h
+def is_within_active_hours():
+    now = datetime.now().hour
+    return 9 <= now < 23
 
-async def reply_to_comments(context, comments):
-    for comment in comments:
-        response = await ask_gpt(comment)
-        print(f"\n💬 Commentaire: {comment}\n🤖 Réponse d'Isabella: {response}\n❤️ Like automatique envoyé")
+# Simule des commentaires Threads (à remplacer plus tard par un vrai scraping)
+def get_mock_comments():
+    return ["Tu es magnifique ❤️", "T'es dispo ce soir ? 😏", "C’est quoi ton secret beauté ?"]
 
-async def run_bot():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            extra_http_headers={"cookie": THREADS_COOKIE}
+# Utilise GPT-4 pour générer une réponse style Isabella
+def generate_reply(comment):
+    prompt = f"Tu es Isabella, une femme douce, sexy, confiante, de 50 ans, très élégante et un peu provocante. Réponds à ce commentaire : \"{comment}\" avec charme, humour et un ou deux emojis."
+    try:
+        completion = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.85,
+            max_tokens=100
         )
-        page = await context.new_page()
-        comments = await get_latest_comments(page, THREADS_USER_ID)
-        await reply_to_comments(context, comments)
-        await browser.close()
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        return f"[Erreur GPT] {str(e)}"
 
-# Exécution en boucle de 9h à 23h
-async def main():
+# Simule la réponse + le like
+def simulate_post_and_like(comment, reply):
+    print(f"\n🗨️ Commentaire reçu : {comment}")
+    print(f"🤖 Réponse d'Isabella : {reply}")
+    print("❤️ Like automatique envoyé")
+
+# Boucle principale du bot
+async def run_bot():
     while True:
-        heure = int(str(asyncio.get_event_loop().time())[-5:]) % 24
-        if 9 <= heure < 23:
-            await run_bot()
-        await asyncio.sleep(300)  # pause de 5 min entre chaque boucle
+        if not is_within_active_hours():
+            print("⏸️ Bot en pause (hors horaires 9h-23h).")
+            time.sleep(300)
+            continue
+
+        print("\n🔁 Vérification des nouveaux commentaires...")
+        comments = get_mock_comments()
+
+        for comment in comments:
+            reply = generate_reply(comment)
+            simulate_post_and_like(comment, reply)
+            time.sleep(4)
+
+        time.sleep(120)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_bot())
