@@ -1,13 +1,11 @@
 import os
 import time
-import json
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
 from openai import OpenAI
+from playwright.async_api import async_playwright
 
-# Chargement des variables d'environnement
 load_dotenv()
 
 THREADS_COOKIE = os.getenv("THREADS_COOKIE")
@@ -16,23 +14,21 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai = OpenAI(api_key=OPENAI_API_KEY)
 
-HEADERS = {
-    "cookie": f"sessionid={THREADS_COOKIE}",
-    "user-agent": "Mozilla/5.0",
-    "content-type": "application/json"
-}
-
 # Vérifie si l'heure est entre 9h et 23h
 def is_within_active_hours():
     now = datetime.now().hour
     return 9 <= now < 23
 
-# Répond à un commentaire avec GPT
+# Simule des commentaires Threads (à remplacer plus tard par un vrai scraping)
+def get_mock_comments():
+    return ["Tu es magnifique ❤️", "T'es dispo ce soir ? 😏", "C’est quoi ton secret beauté ?"]
+
+# Utilise GPT-4 pour générer une réponse style Isabella
 def generate_reply(comment):
-    prompt = f"Tu es Isabella, une femme douce, sexy, confiante de 50 ans. Réponds avec charme et humour à : \"{comment}\""
+    prompt = f"Tu es Isabella, une femme douce, sexy, confiante, de 50 ans, très élégante et un peu provocante. Réponds à ce commentaire : \"{comment}\" avec charme, humour et un ou deux emojis."
     try:
         completion = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.85,
             max_tokens=100
@@ -41,71 +37,53 @@ def generate_reply(comment):
     except Exception as e:
         return f"[Erreur GPT] {str(e)}"
 
-# Scrape les commentaires depuis ton propre profil Threads
-async def get_own_post_comments(playwright):
-    try:
-        browser = await playwright.chromium.launch(headless=True)
-        context = await browser.new_context()
-        page = await context.new_page()
-        await page.goto(f"https://www.threads.net/@{THREADS_USER_ID}")
+# Scraping des commentaires Threads
+async def get_threads_comments():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-software-rasterizer"])
+        page = await browser.new_page()
 
-        # Simule le cookie
-        await context.add_cookies([{
-            "name": "sessionid",
-            "value": THREADS_COOKIE,
-            "domain": ".threads.net",
-            "path": "/"
-        }])
+        # Connexion et récupération des commentaires sous ton post
+        await page.goto("https://www.threads.net/")
+        await page.fill('input[name="username"]', THREADS_USER_ID)
+        await page.fill('input[name="password"]', THREADS_COOKIE)
+        await page.click('button[type="submit"]')
 
-        await page.reload()
-        await page.wait_for_selector("article")
-        posts = await page.query_selector_all("article")
-        comments_data = []
+        comments = await page.query_selector_all('.comment-selector')  # Ajuste le sélecteur selon la structure HTML
 
-        for post in posts:
-            post_id = await post.get_attribute("data-id")
-            if not post_id:
-                continue
-            # Accède à la page du post directement
-            await page.goto(f"https://www.threads.net/p/{post_id}")
-            await page.wait_for_timeout(2000)
-            comments = await page.query_selector_all(".x1iorvi4")  # Ex. de classe
-            for c in comments:
-                text = await c.inner_text()
-                if text:
-                    comments_data.append({"post_id": post_id, "text": text})
+        comments_text = []
+        for comment in comments:
+            text = await comment.text_content()
+            comments_text.append(text)
 
         await browser.close()
-        return comments_data
-    except Exception as e:
-        print(f"[❌ Erreur scraping] {e}")
-        return []
 
-# Post la réponse sur Threads (à implémenter selon API privée ou via Playwright injection)
-async def post_reply_stub(comment_text):
-    print(f"[🔁 Simulé] Réponse postée : {comment_text}")
+    return comments_text
 
-# Boucle principale
+# Simule la réponse + le like
+def simulate_post_and_like(comment, reply):
+    print(f"\n🗨️ Commentaire reçu : {comment}")
+    print(f"🤖 Réponse d'Isabella : {reply}")
+    print("❤️ Like automatique envoyé")
+
+# Boucle principale du bot
 async def run_bot():
-    print("⚙️ Lancement de la boucle principale...")
     while True:
         if not is_within_active_hours():
-            print("⏸️ Bot en pause (hors horaires autorisés)")
-            await asyncio.sleep(300)
+            print("⏸️ Bot en pause (hors horaires 9h-23h).")
+            time.sleep(300)
             continue
 
-        print("🔍 Vérification des nouveaux commentaires...")
-        async with async_playwright() as playwright:
-            comments = await get_own_post_comments(playwright)
+        print("\n🔁 Vérification des nouveaux commentaires...")
+        comments = await get_threads_comments()
 
-            for comment in comments:
-                reply = generate_reply(comment['text'])
-                await post_reply_stub(reply)
-                print("❤️ Like automatique simulé")
-                await asyncio.sleep(5)
+        for comment in comments:
+            reply = generate_reply(comment)
+            simulate_post_and_like(comment, reply)
+            time.sleep(4)
 
-        await asyncio.sleep(120)
+        time.sleep(120)
 
 if __name__ == "__main__":
-    print("✅ Le bot est bien dans main.py et prêt à démarrer la boucle.")
+    print("🔧 Le bot est bien dans main.py et prêt à démarrer la boucle.")
     asyncio.run(run_bot())
