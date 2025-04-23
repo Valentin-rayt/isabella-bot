@@ -1,6 +1,4 @@
 openai
-playwright
-requests
-undetected-chromedriver
-setuptools
 python-dotenv
+undetected-chromedriver
+selenium
