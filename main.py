@@ -45,4 +45,4 @@ async def run_bot():
             }
         ])
         page = await context.new_page()
-        await page.goto("
+        await page.goto("https://www.threads.net/")
