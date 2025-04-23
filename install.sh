@@ -1,3 +1,4 @@
 #!/bin/bash
-pip install -r requirements.txt
-playwright install
+apt-get update
+apt-get install -y wget gnupg software-properties-common
+npx playwright install --with-deps
