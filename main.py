@@ -1,70 +1,66 @@
+# main.py
 import os
-import asyncio
-import logging
+import time
+import random
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from undetected_chromedriver import Chrome, ChromeOptions
 import openai
 
 load_dotenv()
 
-# Configurations des clés
-THREADS_COOKIE = os.getenv("THREADS_COOKIE")
-THREADS_USER_ID = os.getenv("THREADS_USER_ID")
+# Config
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
+THREADS_URL = os.getenv("THREADS_URL")
 openai.api_key = OPENAI_API_KEY
 
-logging.basicConfig(level=logging.INFO)
+# Fonction GPT
+async def generate_reply(comment_text):
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "Tu es Isabella, une femme confiante, séductrice, qui répond toujours avec élégance."},
+            {"role": "user", "content": f"Commentaire : {comment_text}\nRéponds comme Isabella."}
+        ]
+    )
+    return response.choices[0].message.content.strip()
 
-def format_response(raw):
-    # Personnalise la réponse dans le style Isabella
-    return f"❤️ {raw.strip()} ☺️"
+# Setup navigateur
+options = ChromeOptions()
+options.add_argument("--headless")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+driver = Chrome(options=options)
 
-async def get_gpt_reply(prompt):
-    try:
-        completion = await openai.ChatCompletion.acreate(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Tu es Isabella, une femme de 50 ans, séduisante, directe, affectueuse."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return format_response(completion.choices[0].message.content)
-    except Exception as e:
-        logging.error(f"Erreur GPT: {e}")
-        return "Oups, une erreur est survenue."
+def run_bot():
+    driver.get(THREADS_URL)
+    time.sleep(5)
 
-async def handle_comment(comment, page):
-    logging.info(f"\U0001f4ac Commentaire reçu : {comment}")
-    response = await get_gpt_reply(comment)
-    logging.info(f"\U0001f916 Réponse d'Isabella : {response}")
-    # ICI: logiquement, tu insères le commentaire avec Playwright
+    print("🔍 Lecture des commentaires...")
+    comments = driver.find_elements(By.CLASS_NAME, "_acomment")  # Adapter au sélecteur correct
+    for comment in comments:
+        try:
+            content = comment.text.strip()
+            if content:
+                print(f"💬 Commentaire : {content}")
+                reply = asyncio.run(generate_reply(content))
+                print(f"🧠 Réponse : {reply}")
 
-    logging.info("\u2764\ufe0f Like automatique envoyé")
+                # Simule un like (à adapter selon structure Threads)
+                like_button = comment.find_element(By.CLASS_NAME, "_like")
+                if like_button:
+                    like_button.click()
+                    print("❤️ Like envoyé")
 
-async def run_bot():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            extra_http_headers={
-                "cookie": THREADS_COOKIE
-            }
-        )
-        page = await context.new_page()
+                # Ajoute un délai aléatoire
+                time.sleep(random.randint(5, 10))
+        except Exception as e:
+            print(f"⚠️ Erreur : {e}")
 
-        await page.goto("https://www.threads.net/@ton_compte")
-        logging.info("✨ Vérification des nouveaux commentaires...")
-
-        commentaires = [
-            "Tu es magnifique ❤️",
-            "T'es dispo ce soir ? 😉",
-            "C'est quoi ton secret beauté ?"
-        ]  # à remplacer par de la vraie lecture dynamique
-
-        for comment in commentaires:
-            await handle_comment(comment, page)
-
-        await browser.close()
+    driver.quit()
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    run_bot()
