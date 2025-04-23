@@ -13,12 +13,14 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai = OpenAI(api_key=OPENAI_API_KEY)
 
+# Mémorise les commentaires déjà traités
 traited_comments = set()
 
 def is_within_active_hours():
     now = datetime.now().hour
     return 9 <= now < 23
 
+# Simule les commentaires Threads (bientôt remplacé par des vrais)
 def get_mock_comments():
     return [
         "Tu es magnifique ❤️",
@@ -45,7 +47,7 @@ def simulate_post_and_like(comment, reply):
     print("❤️ Like automatique envoyé")
 
 async def run_bot():
-    print("🤖 Bot Isabella démarré.")
+    print("✅ Bot Isabella démarré.")
     while True:
         if not is_within_active_hours():
             print("⏸️ Bot en pause (hors horaires 9h-23h).")
@@ -56,4 +58,7 @@ async def run_bot():
         comments = get_mock_comments()
 
         for comment in comments:
-            if comment in trait
+            if comment in traited_comments:
+                print(f"🔁 Commentaire déjà traité : {comment}")
+                continue
+            traited_comments.add_
