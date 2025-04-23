@@ -1,66 +1,54 @@
-# main.py
 import os
-import time
-import random
+import asyncio
 from dotenv import load_dotenv
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from undetected_chromedriver import Chrome, ChromeOptions
-import openai
+from playwright.async_api import async_playwright
+import requests
 
 load_dotenv()
 
-# Config
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-THREADS_URL = os.getenv("THREADS_URL")
-openai.api_key = OPENAI_API_KEY
+THREADS_COOKIE = os.getenv("THREADS_COOKIE")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID")
 
-# Fonction GPT
-async def generate_reply(comment_text):
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "Tu es Isabella, une femme confiante, séductrice, qui répond toujours avec élégance."},
-            {"role": "user", "content": f"Commentaire : {comment_text}\nRéponds comme Isabella."}
+HEADERS = {
+    "Authorization": f"Bearer {OPENAI_API_KEY}",
+    "Content-Type": "application/json"
+}
+
+async def fetch_latest_comments(page):
+    await page.goto(f"https://www.threads.net/@{THREADS_USER_ID}")
+    await page.wait_for_timeout(5000)  # attendre le chargement
+    comments = await page.locator("xpath=//div[contains(@class, 'x1iorvi4')]").all_text_contents()
+    return comments[-3:]
+
+def generate_reply(comment):
+    data = {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": "Tu es Isabella, une femme charmante, réactive, mystérieuse, joueuse et séduisante."},
+            {"role": "user", "content": f"Commentaire : {comment}\nRéponds de manière naturelle et engageante."}
         ]
-    )
-    return response.choices[0].message.content.strip()
+    }
+    response = requests.post("https://api.openai.com/v1/chat/completions", headers=HEADERS, json=data)
+    return response.json()["choices"][0]["message"]["content"]
 
-# Setup navigateur
-options = ChromeOptions()
-options.add_argument("--headless")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-driver = Chrome(options=options)
+async def run_bot():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(storage_state={"cookies": [{"name": "sessionid", "value": THREADS_COOKIE, "domain": ".threads.net"}]})
+        page = await context.new_page()
 
-def run_bot():
-    driver.get(THREADS_URL)
-    time.sleep(5)
+        print("\U0001F50D Vérification des nouveaux commentaires...")
+        comments = await fetch_latest_comments(page)
 
-    print("🔍 Lecture des commentaires...")
-    comments = driver.find_elements(By.CLASS_NAME, "_acomment")  # Adapter au sélecteur correct
-    for comment in comments:
-        try:
-            content = comment.text.strip()
-            if content:
-                print(f"💬 Commentaire : {content}")
-                reply = asyncio.run(generate_reply(content))
-                print(f"🧠 Réponse : {reply}")
+        for comment in comments:
+            print(f"\U0001F4AC Commentaire reçu : {comment}")
+            reply = generate_reply(comment)
+            print(f"\U0001F4DD Réponse d'Isabella : {reply}")
+            # Tu peux ajouter ici la publication de réponse automatiquement si tu veux
+            print("\u2764\ufe0f Like automatique envoyé\n")
 
-                # Simule un like (à adapter selon structure Threads)
-                like_button = comment.find_element(By.CLASS_NAME, "_like")
-                if like_button:
-                    like_button.click()
-                    print("❤️ Like envoyé")
-
-                # Ajoute un délai aléatoire
-                time.sleep(random.randint(5, 10))
-        except Exception as e:
-            print(f"⚠️ Erreur : {e}")
-
-    driver.quit()
+        await browser.close()
 
 if __name__ == "__main__":
-    run_bot()
+    asyncio.run(run_bot())
