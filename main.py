@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
+from playwright.async_api import async_playwright
 
 load_dotenv()
 
@@ -13,21 +14,42 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai = OpenAI(api_key=OPENAI_API_KEY)
 
-# Liste pour stocker les commentaires déjà traités
-comment_history = set()
+# Pour garder une trace des commentaires déjà traités
+seen_comments = set()
 
 # Vérifie si l'heure est entre 9h et 23h
 def is_within_active_hours():
     now = datetime.now().hour
     return 9 <= now < 23
 
-# Simule des commentaires Threads (à remplacer par scraping réel)
-def get_mock_comments():
-    return [
-        "Tu es magnifique ❤️",
-        "T'es dispo ce soir ? 😏",
-        "C’est quoi ton secret beauté ?"
-    ]
+# Fonction pour récupérer les vrais commentaires avec Playwright
+async def get_real_comments():
+    comments = []
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            extra_http_headers={
+                "cookie": THREADS_COOKIE
+            }
+        )
+        page = await context.new_page()
+
+        try:
+            await page.goto(f"https://www.threads.net/@{THREADS_USER_ID}")
+            await page.wait_for_selector("article")
+            threads = await page.query_selector_all("article")
+
+            for thread in threads:
+                content = await thread.inner_text()
+                if content and content not in seen_comments:
+                    comments.append(content)
+                    seen_comments.add(content)
+
+        except Exception as e:
+            print(f"Erreur Playwright : {e}")
+
+        await browser.close()
+    return comments
 
 # Utilise GPT-4 pour générer une réponse style Isabella
 def generate_reply(comment):
@@ -51,24 +73,21 @@ def simulate_post_and_like(comment, reply):
 
 # Boucle principale du bot
 async def run_bot():
-    print("🔁 Lancement de la boucle principale...")
+    print("🔧 Le bot est bien dans main.py et prêt à démarrer la boucle.")
     while True:
         if not is_within_active_hours():
             print("⏸️ Bot en pause (hors horaires 9h-23h).")
             await asyncio.sleep(300)
             continue
 
-        print("\n🔎 Vérification des nouveaux commentaires...")
-        comments = get_mock_comments()
+        print("\n🔁 Lancement de la boucle principale...")
+        print("📲 Vérification des nouveaux commentaires...")
+
+        comments = await get_real_comments()
 
         for comment in comments:
-            if comment in comment_history:
-                print(f"🔁 Commentaire déjà traité : {comment}")
-                continue
-
             reply = generate_reply(comment)
             simulate_post_and_like(comment, reply)
-            comment_history.add(comment)
             await asyncio.sleep(4)
 
         await asyncio.sleep(120)
