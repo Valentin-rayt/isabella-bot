@@ -1,5 +1,0 @@
-openai
-playwright
-requests
-python-dotenv
-undetected-chromedriver
