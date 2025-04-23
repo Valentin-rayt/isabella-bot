@@ -1,89 +1,70 @@
 import os
-import time
-import random
+import asyncio
 import logging
-import requests
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
-from openai import OpenAI
 from dotenv import load_dotenv
+from playwright.async_api import async_playwright
+import openai
 
 load_dotenv()
 
+# Configurations des clés
 THREADS_COOKIE = os.getenv("THREADS_COOKIE")
 THREADS_USER_ID = os.getenv("THREADS_USER_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-logging.basicConfig(level=logging.INFO)
-openai = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY
 
-def generate_response(comment):
+logging.basicConfig(level=logging.INFO)
+
+def format_response(raw):
+    # Personnalise la réponse dans le style Isabella
+    return f"❤️ {raw.strip()} ☺️"
+
+async def get_gpt_reply(prompt):
     try:
-        response = openai.chat.completions.create(
+        completion = await openai.ChatCompletion.acreate(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Tu es Isabella, une femme de 50 ans séduisante et confiante, toujours aimable et joueuse. Tu réponds aux commentaires comme si tu étais sur Threads."},
-                {"role": "user", "content": comment}
+                {"role": "system", "content": "Tu es Isabella, une femme de 50 ans, séduisante, directe, affectueuse."},
+                {"role": "user", "content": prompt}
             ]
         )
-        return response.choices[0].message.content.strip()
+        return format_response(completion.choices[0].message.content)
     except Exception as e:
-        logging.error(f"[GPT-4] Error: {e}")
-        return None
+        logging.error(f"Erreur GPT: {e}")
+        return "Oups, une erreur est survenue."
 
-def like_comment(driver, comment_element):
-    try:
-        like_button = comment_element.find_element(By.XPATH, ".//button[contains(@aria-label, 'Like')]")
-        like_button.click()
-        logging.info("❤️ Like automatique envoyé")
-    except Exception as e:
-        logging.warning(f"Like non envoyé : {e}")
+async def handle_comment(comment, page):
+    logging.info(f"\U0001f4ac Commentaire reçu : {comment}")
+    response = await get_gpt_reply(comment)
+    logging.info(f"\U0001f916 Réponse d'Isabella : {response}")
+    # ICI: logiquement, tu insères le commentaire avec Playwright
 
-def reply_to_comment(driver, comment_element, response):
-    try:
-        reply_button = comment_element.find_element(By.XPATH, ".//button[contains(text(),'Reply') or contains(text(),'Répondre')]")
-        reply_button.click()
-        time.sleep(1)
-        reply_box = driver.switch_to.active_element
-        ActionChains(driver).send_keys(response).perform()
-        time.sleep(0.5)
-        ActionChains(driver).send_keys(Keys.RETURN).perform()
-        logging.info(f"💬 Réponse d'Isabella : {response}")
-    except Exception as e:
-        logging.warning(f"Impossible de répondre : {e}")
+    logging.info("\u2764\ufe0f Like automatique envoyé")
 
-def run_bot():
-    logging.info("🤖 Lancement du bot Isabella...")
-    options = uc.ChromeOptions()
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-gpu")
-    driver = uc.Chrome(options=options)
+async def run_bot():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            extra_http_headers={
+                "cookie": THREADS_COOKIE
+            }
+        )
+        page = await context.new_page()
 
-    try:
-        driver.get("https://www.threads.net/@" + THREADS_USER_ID)
-        driver.add_cookie({"name": "sessionid", "value": THREADS_COOKIE, "domain": ".threads.net"})
-        driver.refresh()
-        time.sleep(5)
+        await page.goto("https://www.threads.net/@ton_compte")
+        logging.info("✨ Vérification des nouveaux commentaires...")
 
-        logging.info("🔍 Vérification des nouveaux commentaires...")
-        comments = driver.find_elements(By.XPATH, "//div[contains(@class, 'x1iorvi4')]//span")
+        commentaires = [
+            "Tu es magnifique ❤️",
+            "T'es dispo ce soir ? 😉",
+            "C'est quoi ton secret beauté ?"
+        ]  # à remplacer par de la vraie lecture dynamique
 
-        for comment_element in comments:
-            comment = comment_element.text.strip()
-            if comment:
-                logging.info(f"💬 Commentaire reçu : {comment}")
-                reply = generate_response(comment)
-                if reply:
-                    reply_to_comment(driver, comment_element, reply)
-                    like_comment(driver, comment_element)
-                time.sleep(random.uniform(2, 4))
+        for comment in commentaires:
+            await handle_comment(comment, page)
 
-    except Exception as e:
-        logging.error(f"Erreur globale : {e}")
-    finally:
-        driver.quit()
+        await browser.close()
 
-if __name__ == '__main__':
-    run_bot()
+if __name__ == "__main__":
+    asyncio.run(run_bot())
